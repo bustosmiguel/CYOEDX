@@ -1,0 +1,792 @@
+---
+title: "HarvardX PH125.9x"
+author: "Miguel Angel Bustos Sáez"
+date: '2022-10-13'
+output:
+  pdf_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: '2'
+  html_document:
+    toc: yes
+    toc_depth: '2'
+    df_print: paged
+subtitle: CYO Project
+---
+
+
+\pagebreak
+
+
+# The introduction & Data 
+
+
+The following project it´s about a random forest algorithm, a technique that can transform a single tree model with high variance and predictive power into a fairly accurate prediction function. 
+
+
+Random Forest it´s a modification of bagging that builds a large collection of correlated
+trees and have become a very popular and has a good performance.
+
+The objective of this project is to obtain different outputs and conclusions about predict methods, and at the finish a Random Forest output that predicts the categorical variable month between others but escencialy when the pm2.5 or air quality can be in a quality range, using a Random Forest algorithm.
+
+
+The data was obtained from archive.ics.uci.edu and it´s the Bijing environmental environment information, has thirteen variables, each of them has a different meaning, that are the folliwing:
+
+-   No: Row number
+
+-   Year: The year of each row registration
+
+-   Month: The month of each row registration
+
+-   Day: The day of each row registration
+
+-   Hour: The hour of each row registration
+
+-   Pm2.5: Pm2.5 concentration (ug/m\^3)
+
+-   Dewp: Dew Point (â„ƒ)
+
+-   Temp: Temperature (â„ƒ)
+
+-   Pres: Pressure (hPa)
+
+-   Cbwd: Combined wind direction
+
+-   Iws: Cumulated wind speed (m/s)
+
+-   Is: Cumulated hours of snow
+
+-   Ir: Cumulated hours of rain
+
+\pagebreak
+
+```{r, include=FALSE}
+
+library(tidyverse)
+library(psych) #para corplot install.packages("psych")
+library(corrplot) #para corrplot install.packages("psych")
+library(randomForest)
+library(tree) #For tree
+library(forcats)
+library(caret)#for confusionMatrix
+
+```
+
+```{r, include=F}
+
+# https://archive.ics.uci.edu/ml/datasets/Beijing+PM2.5+Data
+car_ev <- c("https://archive.ics.uci.edu/ml/machine-learning-databases/00381/PRSA_data_2010.1.1-2014.12.31.csv")
+```
+
+```{r, include=F}
+
+e <- read.delim(car_ev, sep = ",")
+e
+
+```
+
+**Data Changes**
+
+It´s recommended to remove NA´s rows, and we reduce 43748 rows to 41681.
+Now the data has 41681 rows and without NA´s. This summary shows the
+range but additionaly it´s necessary some comments:
+
+-   The cbwd range it´s 43824 (unique(cbwd) shows the cardinal points SE, cv, NW, NE)
+
+-   The pm2.5 range it´s 0 to 994 It is an air pollutant that is a concern for people's health when levels in air are high. The 35.4 it´s acceptable but 35.5 it´s unhealthy.
+
+-   The month it´s one to twelve, it´s necessary to change it to january to december, changing the class from numerica to character.
+
+-   The data has 43748 rows, but some had NA rows, that were removed.
+
+
+
+
+
+```{r, include=F}
+
+
+
+
+delete.na <- function(e, n=0) {
+  e[rowSums(is.na(e)) <= n,]
+}
+e <- delete.na(e)
+
+
+```
+
+```{r, include=F}
+
+summary(e)
+
+```
+
+-   The month it´s the most critical variable to predict the Temperature
+    in this project.
+
+# Correlation Matrix
+
+There seems to be a slight negative correlation between the wind speed
+Iws and pm2.5 Also a positive or high correlation between the
+temperature TEMP and the dew point DEWP (Dew point) The correlation:
+
+```{r, echo=F}
+
+corPlot(e %>% select(No, year, day, hour, pm2.5, DEWP, TEMP, PRES, Iws, Is, Ir), 
+        cex = 0.5, main = "Correlation Matrix")
+```
+
+In this project, it´s necessary see these correlations of all the variables, to have a global vision and the importance of each variable between others.
+
+\pagebreak
+
+
+Here it´s another visualization that confirms that the negative
+relationship between PRES and DEWP but a slighly negative correlation
+between the wind speed Iws and pm2.5. Also a positive or high
+correlation between the temperature TEMP and the dew point DEWP (Dew
+point)
+
+```{r, echo=FALSE}
+
+corrplot(cor(e%>% select(No, year, day, hour, pm2.5, DEWP, TEMP, PRES, Iws, Is, Ir)),
+         method = "circle",       
+         order = "hclust",        
+         hclust.method = "ward.D", 
+         addrect = 2,              
+         rect.col = 3,             
+         rect.lwd = 3)             
+
+
+
+```
+
+
+
+**Correlation Importance**
+
+
+Anyway the main variable and critical point it´s the PM2.5 variable, some countries tries to reduce the exposure to fine particle pollution, and Smart Air www.smartairfilters.com reported that since 2014 to 2019, the PM2.5 in Beijing were reduce to 50%, that information it´s not available in the data set of this project, but in the Bibliography it´s available the source of that important information.
+
+Additionaly the site informs thas despite the harms of PM2.5, studies have found that wearing masks prevents effects on blood pressure and heart rate variability and reducing particulate in the home prevents harm blood pressure, inflammation, and immune response. Exposure to PM2.5 has been linked to premature death,  particularly in people who have chronic heart or lung diseases, and reduced lung function growth in children.
+
+
+
+\pagebreak
+
+# PM2.5 Distribution
+
+**PM2.5 per Month Distribution**
+
+At first glance, it appears that the fine dust concentration is low in April and September and the fine dust concentration is high in October, January and February.
+
+```{r, echo=FALSE}
+e %>% ggplot(aes(x = month, y = pm2.5 ))+
+  geom_col() + 
+  ggtitle("PM2.5 per Month Distribution")+
+  ylab("PM2.5")+
+  xlab("MONTH")
+  
+```
+
+
+**Month**
+
+Month is of integer data type, it tells the month in which data is collected in all rows and in this column plot the month variable has different proportion of this dust or PM2.5. On february and October months are the more frequent observarions.
+
+
+
+
+\pagebreak
+
+**PM2.5 per Hour Distribution**
+
+During the day, the concentration of fine dust appears to be high in the early morning hours:
+
+```{r, echo=FALSE}
+e %>% ggplot(aes(x = hour, y = pm2.5 ))+
+  geom_col()+
+  ggtitle("PM2.5 per Hour Distribution")+
+  ylab("PM2.5")+
+  xlab("HOUR")
+```
+
+**Hour**
+
+Hour and rush hour it´s the critical point that must be reduced to have a better air. This plot shows the concentration intervals during all day, and mornings it´s the more concentrated PM2.5 dust.
+
+**Hour Importance**
+
+Identifying the PM2.5 concentration, the decision must be focusing the decision making in that timetables, is for that reason that governments impart the vehicular restriction or choose electrical cars, but they are expensive and perhpas in the future will be more accessible. But the importance of identify the hour it´s very important and focusing in that can help to take some decisions or discussions about how to reduce the carbon footprint.
+
+\pagebreak
+
+# Temperature based on month
+
+Each month has different temperature and here we have a temperature per month distribution:
+
+```{r, echo=FALSE}
+
+  ggplot(data = e)+
+    geom_point(aes(x = TEMP, y = month, color = month), size = 5)+
+    ggtitle("Temperature per Month Distribution")+
+    ylab("Month")+
+    xlab("Temperature")
+
+```
+
+
+
+
+```{r, echo=TRUE}
+w <- summary(e$TEMP)
+print(paste("TEMP:", w))
+
+```
+
+**Monthly Temperature**
+
+Where the minimum temperature it´s minus nineteeen and maximun it´s forty two. May it´s the warmest month and July it´s the second warmest. 
+
+In the next page, it´s presented some temperature and wind speed means, where these highest warmest months.
+
+\pagebreak
+
+# Temperature based on Iws
+
+Temperature is higher in the afternoons and cooler in the twighlight time in the morning.
+
+```{r, echo=FALSE}
+
+ ggplot(data = e)+
+    geom_point(aes(x = TEMP, y = Iws, color = TEMP), size = 0.8)+
+    ggtitle("Temperature per Iws Level Wind Speed")+
+    ylab("Iws")+
+    xlab("Temperature")
+
+```
+
+**Cumulated wind speed & Temperature**
+
+Between january to march the mean TEMP was 2.767 with a Iws mean 17.30 and Between april to july the mean TEMP was 21.85 with a Iws mean 21.59. Iws, Cumulated wind speed it´s higher in april to july:
+
+```{r, echo=FALSE}
+
+select(.data = e, Iws, TEMP, month, year) %>% 
+  filter(year == 2014, month %in% c(1:3)) %>%
+  summary()
+
+```
+
+```{r, echo=FALSE}
+
+select(.data = e, Iws, TEMP, month, year) %>% 
+  filter(year == 2014, month %in% c(4:7)) %>% 
+  summary()
+
+```
+
+\pagebreak
+
+
+# Temperature TEMP Linear Model, MSE and Correlation
+
+**TEMP Linear Model**
+
+```{r, echo=F}
+
+elm <- lm(TEMP~., data = e)
+  summary(elm)
+
+```
+
+This linear model shows the temperature output between all others variables. The R-squared it´s a correlation, knowning as "goodness of fit", is represented as a value between 0.0 and 1.0 and in this lineal model reached 0.8435 or 0.8. It means that temperature it´s the **80%** of the variance between others are very strong. The Std. Error can be used to calculate confidence interval and others in the next page has the R-quared explanation Linear Model result. Additionally MSE and Correlation.
+
+* **TEMP Residuals Standard Error**
+
+**Residuals Standard Error* or *Residual Standard Deviation** is a measure used to assess how well a Linear Regression model fits the data. The Regression Model predicts the TEMP or temperature has an average error about **4.8**. (Even the lower this value is, that means the better the model will be)
+
+\pagebreak
+
+**TEMP F-Statistic & P-value**
+
+* If F-statistic is little bit larger than 1 is already sufficient to reject the null hypothesis, in this case it´s **1.6**. The P-value it´s very small **2.2** so lower than 5 and this is enough to reject the null hypothesis. We reject the null hypothesis and conclude that there is strong evidence that a relationship does exist between TEMP Temperature and others variables.
+
+
+
+**TEMP R-squared**
+
+* When **R-squared** is small, the **Adjusted R-squared** will become negative and it is not in this case.
+
+* An adjusted r-squared is a more accurate measure than r-squared about how much variance in the response or dependent variable (Y) 
+
+
+
+**Concept**                |  **Result**                | 
+---------------------------|----------------------------|
+*R-squared*                | 0.8436
+*Adjusted R-squared*       | 0.8435
+
+
+* It´s necessary to get some conclusions about the variables, before to start with Random Forest and to analize the data set, the **Adjusted R-squared** it´s the more important measure and it means that temperature has a strong relationship with all others variables.
+
+
+
+```{r, include=FALSE}
+  elm_predict <- predict(elm, newdata = e)
+  elm_predict
+```
+
+
+**TEMP MSE**
+
+* The residual standard error is an estimate of the standard deviation of the response relative to the population regression line. 
+
+$$MSE = (1/n) * sum(actual – forecast)2$$
+
+* MSE it´s a risk function that measures the square of errors and in the case of Temperature between others variables, the MSE result it´s **23.18**.
+
+```{r, include=FALSE}
+  elm_mse <- mean((elm_predict - e$TEMP)^2) #[1] 23.18344
+```
+
+
+```{r, echo=F}
+
+  print(paste("MSE:", elm_mse))
+
+```
+
+
+
+**TEMP Correlation**
+
+```{r, include=F}
+  elm_COR <- cor(elm_predict, e$TEMP) #[1] 0.9184774
+```
+
+
+```{r, echo=F}
+
+  print(paste("Correlation:", elm_COR))
+
+```
+
+-   The Temperature variable between others variables has a strong
+    correlation.
+    
+    
+    
+    
+
+\pagebreak
+
+
+
+
+
+
+
+
+
+
+
+
+# Random Forest Temperature in different Months
+
+**Random Forest**
+
+Now it´s time to make some predictions in different months january to december or 1 to 12. **¿How we can predict the *air quality* in different month?** It´s neccesary to create:
+
+* The Data
+* The ThePM (PM2.5)
+* The Training Model
+* The Testing Model
+* The Training
+* The Model and Model OOB
+* Categorize Forecasts
+* Some PM2.5 testings in Months Forecasts
+* The Prediction PM2.5 air in months
+* Air Predictions in different Months.
+
+## The Data
+
+Month is character variable in Data, having 29637 rows and for doing any Random Forest it´s necessary to transform the class of month, from character to factor.
+
+```{r, echo=F}
+
+data = e %>% filter(pm2.5 >=35.5 & month == factor(month))
+str(data)
+```
+
+## The ThePM (PM2.5)
+
+The PM2.5 it´s the contamination dust, we´re going to call it just thePM to make it simple and we have 994 PM2.5 values registrations:
+
+```{r, echo=F}
+
+thePM = unique(e$pm2.5)
+```
+
+-   Summary
+
+```{r, echo=F}
+
+summary(thePM)
+
+```
+
+-   Structure
+
+```{r, echo=F}
+
+str(thePM)
+
+```
+
+**Concern:** The PM2.5 basically it´s the main *concern* about the air quality, **¿How we can predict the *air quality* in different month?**
+
+\pagebreak
+
+## The Training Model
+
+
+training_u it´s the sample of 70% that helps to train the predict model, 70% because it´s a few data and the 70% it´s 406 values in training_u:
+
+```{r, include=T}
+
+training_u = sample(thePM, length(thePM) * 0.70, replace = FALSE)
+
+```
+
+training_u
+
+-   Summary
+
+```{r, echo=F}
+
+summary(training_u)
+
+```
+
+-   Structure
+
+```{r, echo=F}
+
+str(training_u)
+
+```
+
+## The Testing Model
+
+A test set is reserved for future evaluations of predictive power, this is called The Testing Model or testing_u Where it´s de difference of training_u
+
+```{r, echo=F}
+
+testing_u = thePM[-training_u]
+testing_u
+
+```
+
+-   Summary
+
+```{r, echo=F}
+
+summary(testing_u)
+
+```
+
+-   Structure
+
+```{r, echo=F}
+
+str(testing_u)
+
+```
+
+Now it´s necessary to create a training model.
+
+\pagebreak
+
+## Training
+
+Here it´s the creation of the data for training and this training itps the diference from training_u. And it´s a filter of the *concern*, and that *concern*, it´s the PM2.5 air quality variable. For randomForest, the variable you use in the Model must be factor, here in training it is necessary to fix it to factor.
+
+Training: Selecting all variables and mutate the month as a factor, this because for Random Forest any categorical variable must pass from character to a factor.
+
+```{r, echo=F}
+
+training = data %>% filter(pm2.5 %in% training_u) %>% 
+  select(No, year, month, day, hour, pm2.5, DEWP, TEMP, PRES, Iws, Is, Ir, cbwd) %>% mutate(month = factor(month))
+
+```
+
+-   Summary
+
+```{r, echo=F}
+
+summary(training)
+
+```
+
+-   Structure
+
+```{r, echo=F}
+
+str(training)
+
+```
+
+**As you can see here in this structure, now month variable it´s factor**
+\pagebreak
+
+## Model
+
+First, let's proceed by setting a seed to run a model that makes tests and that tests starts in a set.seed zero and the forecast must be the same zero seed. Additionally this Random Forest algorithm needs an estimator or the number of trees, in this case it´s 10.
+
+Numerically where to start testing from, hence the seed. You can improve the quality of the Model, giving it different seeds. If the Model is not good, another seed is given. For this project a set.seed is zero.
+
+Random Forest Model the data comes from the training, month based on PM2.5 air quality that in the *concern*. 
+
+```{r, include=F}
+set.seed(0)
+Model = randomForest(month ~ ., data = training, ntree = 10, method = "class", norm.votes = FALSE, do.trace = 10, proximity = FALSE, importance = TRUE)
+
+```
+
+-   Summary
+
+```{r, echo=F}
+
+summary(Model)
+
+```
+
+-   Structure
+
+
+```{r, echo=F}
+
+str(Model)
+
+```
+
+
+*The model and the interpretation in the next page*
+
+
+\pagebreak
+
+# Categorize Forecasts
+
+
+**The OOB muestra**
+
+
+```{r, include=FALSE}
+
+muestra = list(testing_u, Model)
+```
+
+
+
+```{r, include=FALSE}
+
+Model = muestra[[2]]
+  testing_u = muestra[[1]]
+  testing = data %>% filter(pm2.5 %in% testing_u)
+
+```
+
+
+```{r, include=TRUE}
+
+Model
+
+```
+
+OOB Out of Bag error or estimate of error rate: 9.86%, **81%** of accuracy. The data set model accuracy is approximately 90% (100 minus OBB Out of Bag error)
+
+**Interpretation**
+
+* 1434values were correctly classified as january or 1
+* 1456 values were correctly classified as february or 2
+* 31   values that should have been classified as february were classified as january.
+* So on (If you run the code many times, many times will change these numbers, because it´s a matrix)
+
+**Overall Accuracy**
+
+The overall accuracy is calculated by summing the number of correctly classified values and dividing by the total number of values:
+
+* Total of number of values: To sum all rows and the vertical total
+* Correctly classified values: **17803** (It´s necessary to sum the correctly classified values: 1383 + 1420 + 1351 + 1427 + 1667 + 1712 + 1822 + 1499 + 1409 + 1527 + 1330 + 1256 = 17803)
+* Overall Accuracy : 1256/Total of number of values = **Accuracy**.
+
+It can takes a considerable time, for that reason it´s the importance of **OOB estimate of error rate**, in this case it´s the **10%** approximately. So the accuracy it´s the difference a **90%**.
+
+
+\pagebreak
+
+
+
+
+
+
+
+
+
+
+
+
+# Testing PM2.5
+
+If you think to be necessary, you can do some testing choosing any
+pm2.5, any of these values:
+
+```{r, include=TRUE}
+
+
+unique(testing$pm2.5)
+
+```
+
+To set a **Forecast**. In my case, I´m going to set a PM2.5 40 to 60 forecast range:
+
+
+```{r, include = T, echo = T}
+
+testingair = testing %>% filter(pm2.5 %in% (40:60)) %>% select(No, year, month, day, hour, pm2.5, DEWP, TEMP, PRES, Iws, Is, Ir, cbwd)
+```
+
+Now as the page 14 makes mention, in the point 7.6, the set.seed must be the same as used in the model, here it is a prediction air, in a vector called predictionair:
+
+```{r, include=TRUE}
+
+  set.seed(0)
+  predictionair <- predict(Model, newdata = testingair, type = "class")
+```
+
+Now month as a factor and we can see the first prediction according to the last set PM2.5 in the range of 40 to 60.
+
+```{r, include=TRUE}
+
+  predictionair = as.factor(predictionair)
+  testingair$month = as.factor(testingair$month)
+  table(predictionair)
+```
+
+**Predictions Matrix**
+
+In the next page it´s presented a confusion matrix about the predict Model, and next: Random Forest Error Rate Plot and Importance of Variable Plot. 
+
+```{r, include=TRUE}
+
+predictions.rf <- predict(Model, newdata = testing)
+```
+
+
+
+\pagebreak 
+
+**Confusion Matrix**
+
+```{r, include=TRUE}
+
+confusionMatrix(predictions.rf, as.factor(testing$month))
+
+```
+\pagebreak 
+
+
+# Random Forest Error Rates and Importance of variables
+
+```{r, echo=FALSE, fig.dim = c(7, 4)}
+plot(predictions.rf, main = "Error rate of Random Forest")
+
+```
+
+
+
+
+
+```{r, echo=FALSE, fig.dim = c(7, 4)}
+
+varImpPlot(Model, pch = 0, main = "Importance of Variables")
+
+```
+
+Plot with varImpPlot() function from Random Forest library
+
+# The Prediction PM2.5 air in months
+
+We can contiuous with the prediction:
+
+```{r, include=TRUE}
+
+table(predictionair) 
+
+```
+
+And aleatory suggestions of months:
+
+# Air Predictions in different Months
+
+```{r, include=TRUE}
+
+table(predictionair) 
+
+```
+
+Recommendation, even can be more, it depends of the choosen pm2.5 In this
+case where three the prediction and these are the predicted months that the air quality will be between *40 and 42*, taking this code:
+
+**Months prediction in Air quality PM2.5**
+
+```{r, include=TRUE}
+
+  suggestion = names(sort(table(predictionair), decreasing = T))
+  suggestion = names(sort(table(predictionair), decreasing = T)[1:3]) 
+  suggestion    
+```
+
+So these are the months predicted.
+
+
+And here it´s the head of the prediction, in a filter taking the suggestion:
+
+```{r, include=TRUE}
+  
+  head(testingair %>% filter(month %in% suggestion))
+```
+
+
+
+And finish the suggestions have many rows
+
+
+```{r, include = T, echo = F}
+  testingair %>% filter(month %in% suggestion) %>% group_by(month)
+
+```
+
+\pagebreak 
+
+# Conclusions
+
+
+The air quality depends on multi-dimensional factors including location, time, weather parameters, such as temperature, humidity, wind direction and force, air pressure, carbon dioxide, relative humidity, sulfur dioxide, wind speed, etc. 
+
+In this project were presented jsome variables: Temperature, Iws, Month, PM2.5, and Hour. Aditionally the correlation of each of tese variables and others and was finally to obtain the minimum prediction and in the testing with a pm2.5 40.0 to 60.0 obtaining a prediction month values.
+
+Random Forest depends on the data, and it´s critical to have categorical data, in this data set the only categorical data was month and cbwd. Month with 1 to 12 months and cbwd with cardinal points. And for that reason the decision was take the more appropiate for this algorithm and was month. Additionally one of the objectives of the course was a simple code and for that reason was this data choosen.
+
+To obtain a better result in this data or similar projects, it´s necessary to obtain more variables, and ideal:
+
+* Categorical data
+* More variables, to have a better accuracy.
+* Use the same seed.set in the Model and in the Testing
+* Make more than one testing with different set.seed and see which set.seed has a better accuracy in the model.
+* Change the class of the predicted Random Forest variable from character to factor.
+
+This project it´s simple and easy to read and thanks for the opportunity to present it.
